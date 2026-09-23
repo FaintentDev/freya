@@ -182,6 +182,7 @@ pub struct Runner {
     pub(crate) task_id_counter: Rc<AtomicU64>,
 
     pub(crate) tasks: Rc<RefCell<FxHashMap<TaskId, Rc<RefCell<Task>>>>>,
+    reload_epoch: u64,
 
     pub(crate) sender: futures_channel::mpsc::UnboundedSender<Message>,
     pub(crate) receiver: futures_channel::mpsc::UnboundedReceiver<Message>,
@@ -240,9 +241,11 @@ impl Runner {
     pub fn new(root: impl Fn() -> Element + 'static) -> Self {
         let (sender, receiver) = futures_channel::mpsc::unbounded::<Message>();
         Self {
+            reload_epoch: 0,
             scopes: FxHashMap::from_iter([(
                 ScopeId::ROOT,
                 Rc::new(RefCell::new(Scope {
+                    hot_reload_epoch: 0,
                     parent_node_id_in_parent: NodeId::ROOT,
                     path_in_parent: Box::from([]),
                     height: 0,
@@ -862,13 +865,19 @@ impl Runner {
                     // Colliding keys can pair components of different types, which requires a full reset
                     let type_changed = (existing_scope.props.as_ref() as &dyn Any).type_id()
                         != (props.as_ref() as &dyn Any).type_id();
-                    if key_changed || type_changed || existing_scope.props.changed(props.as_ref()) {
+                    let reloaded = existing_scope.hot_reload_epoch != self.reload_epoch;
+                    if reloaded
+                        || key_changed
+                        || type_changed
+                        || existing_scope.props.changed(props.as_ref())
+                    {
                         self.dirty_scopes.insert(assigned_scope_id);
                         existing_scope.props = props.clone();
 
-                        if key_changed || type_changed {
+                        if reloaded || key_changed || type_changed {
                             existing_scope.key = key.clone();
                             existing_scope.comp = comp.clone();
+                            existing_scope.hot_reload_epoch = self.reload_epoch;
                             self.scopes_storages
                                 .borrow_mut()
                                 .get_mut(&assigned_scope_id)
@@ -890,6 +899,7 @@ impl Runner {
                             props: props.clone(),
                             element: None,
                             nodes: PathGraph::default(),
+                            hot_reload_epoch: 0,
                         })),
                     );
                     self.scopes_storages.borrow_mut().insert(
@@ -1518,6 +1528,7 @@ impl Runner {
             );
         }
 
+        self.reload_epoch = self.reload_epoch.wrapping_add(1);
         self.dirty_scopes.extend(self.scopes.keys());
         let _ = self
             .sender

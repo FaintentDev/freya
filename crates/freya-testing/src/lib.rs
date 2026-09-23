@@ -360,6 +360,13 @@ impl TestingRunner {
         self.runner.handle_events_immediately()
     }
 
+    /// Simulates what the winit layer does when a hot-patch lands:
+    /// `Runner::reload()` followed by `sync_and_update` (see freya-winit/src/renderer.rs).
+    pub fn simulate_hot_reload(&mut self) {
+        self.runner.reload();
+        self.sync_and_update();
+    }
+
     pub fn process_focus_strategy(&mut self) {
         if let Some(strategy) = self.requested_focus_strategy.borrow_mut().take() {
             self.tree
