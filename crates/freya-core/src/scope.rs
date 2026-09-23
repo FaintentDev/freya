@@ -44,6 +44,10 @@ pub struct Scope {
     pub props: Rc<dyn ComponentProps>,
 
     pub element: Option<PathElement>,
+
+    /// Bumped on every hot-reload; forces props/comp refresh for scopes whose
+    /// `PartialEq` cannot observe state captured in their props (closures, Writables).
+    pub hot_reload_epoch: u64,
 }
 
 impl Scope {
